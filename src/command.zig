@@ -9,7 +9,7 @@ pub fn init(comptime T: type) type {
 
         pub const Context = struct {
             data: *T,
-            passthrough_args: []const u8,
+            passthrough_args: []const []const u8,
         };
 
         /// Name of the command
@@ -41,30 +41,163 @@ pub fn init(comptime T: type) type {
             /// Sub commands available to run
             commands: []const Cmd,
         };
-        const ActionFn = *const fn (allocator: std.mem.Allocator, cmd: *Cmd, ctx: Context) anyerror!void;
+        const ActionFn = *const fn (allocator: std.mem.Allocator, cmd: *const Cmd, ctx: Context) anyerror!void;
 
         /// Run the command using the given args slice
-        pub fn run(self: *Cmd, allocator: std.mem.Allocator, args: [][]const u8, data: *T) !void {
-            const parsed_args, const passthrough_args = try Parser.parse(allocator, args);
+        pub fn run(self: *const Cmd, allocator: std.mem.Allocator, command_args: [][]const u8, data: *T) !void {
+            const parsed_args, const passthrough_args = try Parser.parse(allocator, command_args);
+            defer allocator.free(parsed_args);
 
-            const cmd = self;
-            // const action: ActionFn = undefined;
+            var command_stack = std.ArrayList(*const Cmd).init(allocator);
+            defer command_stack.deinit();
 
-            if (parsed_args.len == 0) switch (cmd.action) {
-                .run => {},
+            var cmd = self;
+            try command_stack.append(cmd);
+
+            var pos: usize = 0;
+            var i: usize = 0;
+            while (i < parsed_args.len) : (i += 1) {
+                const arg = parsed_args[i];
+
+                switch (arg) {
+                    .short => |short| {
+                        if (cmd.flags) |flags| {
+                            var found = false;
+                            for (short.name, 0..) |name, index| {
+                                for (flags) |flag| {
+                                    if (flag.short_name == null or flag.short_name.? != name) {
+                                        continue;
+                                    }
+                                    var binding = flag.binding;
+                                    try binding.parse(blk: {
+                                        if (index == short.name.len - 1) {
+                                            if (consumePositional(short.value, binding, parsed_args[i..])) {
+                                                i += 1;
+                                                break :blk parsed_args[i].positional;
+                                            }
+                                            break :blk short.value;
+                                        }
+                                        break :blk null;
+                                    });
+                                    found = true;
+                                    break;
+                                }
+                                if (!found) {
+                                    std.debug.print("Unknown flag: {c}\n", .{name});
+                                    return Error.UnknownFlag;
+                                }
+                            }
+                        } else {
+                            std.debug.print("Unknown flag: {s}\n", .{short.name});
+                            return Error.UnknownFlag;
+                        }
+                    },
+                    .long => |long| {
+                        if (cmd.flags) |flags| {
+                            var found = false;
+                            for (flags) |flag| {
+                                if (!std.mem.eql(u8, flag.long_name, long.name)) {
+                                    continue;
+                                }
+                                var binding = flag.binding;
+                                try binding.parse(blk: {
+                                    if (consumePositional(long.value, binding, parsed_args[i..])) {
+                                        i += 1;
+                                        break :blk parsed_args[i].positional;
+                                    }
+                                    break :blk long.value;
+                                });
+                                found = true;
+                                break;
+                            }
+                            if (!found) {
+                                std.debug.print("Unknown flag: {s}\n", .{long.name});
+                                return Error.UnknownFlag;
+                            }
+                        } else {
+                            std.debug.print("Unknown flag: {s}\n", .{long.name});
+                            return Error.UnknownFlag;
+                        }
+                    },
+                    .positional => |positional| switch (cmd.action) {
+                        .run => {
+                            if (cmd.args) |positionals| {
+                                if (pos < positionals.len) {
+                                    var binding = positionals[pos].binding;
+                                    try binding.parse(positional);
+                                    pos += 1;
+                                } else {
+                                    return Error.TooManyArguments;
+                                }
+                            } else {
+                                return Error.TooManyArguments;
+                            }
+                        },
+                        .commands => |commands| {
+                            var found = false;
+                            for (commands) |*command| {
+                                if (!std.mem.eql(u8, positional, command.name)) {
+                                    continue;
+                                }
+                                cmd = command;
+                                found = true;
+                                try command_stack.append(cmd);
+                                break;
+                            }
+                            if (!found) {
+                                std.debug.print("Unknown command: {s}\n", .{positional});
+                                return Error.UnknownCommand;
+                            }
+                        },
+                    },
+                }
+            }
+
+            for (command_stack.items) |command| {
+                if (command.flags) |flags| {
+                    for (flags) |flag| {
+                        if (flag.required and flag.binding.count == 0) {
+                            std.debug.print("Required flag: {s}\n", .{flag.long_name});
+                            return Error.MissingRequiredFlag;
+                        }
+                    }
+                }
+                if (command.args) |args| {
+                    for (args) |arg| {
+                        if (arg.required and arg.binding.count == 0) {
+                            std.debug.print("Required flag: {s}\n", .{arg.name});
+                            return Error.MissingRequiredArg;
+                        }
+                    }
+                }
+            }
+
+            const action = switch (cmd.action) {
+                .run => |action| action,
                 .commands => return Error.MissingSubCommands,
             };
-
-            // TODO: double dash hit -> passthrough_args = if (i < args.len) args[i + 1..] else null;
-
-            // try action(allocator, cmd, .{
-            //     .data = data,
-            //     .passthrough_args = passthrough_args,
-            // });
-            _ = data;
-            _ = passthrough_args;
+            try action(allocator, cmd, .{
+                .data = data,
+                .passthrough_args = passthrough_args,
+            });
         }
     };
+}
+
+fn consumePositional(value: ?[]const u8, binding: Binding, args: []const Parser.Arg) bool {
+    if (value != null) {
+        return false;
+    }
+    if (binding.metadata.bool == true) {
+        return false;
+    }
+    if (args.len == 1) {
+        return false;
+    }
+    if (args[1] != .positional) {
+        return false;
+    }
+    return true;
 }
 
 const Flag = struct {
@@ -84,4 +217,11 @@ const PositionalArg = struct {
     binding: Binding,
 };
 
-const Error = error{MissingSubCommands};
+const Error = error{
+    TooManyArguments,
+    MissingSubCommands,
+    MissingRequiredFlag,
+    MissingRequiredArg,
+    UnknownFlag,
+    UnknownCommand,
+};

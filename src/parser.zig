@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const Arg = union(enum) {
+pub const Arg = union(enum) {
     short: struct {
         name: []const u8,
         value: ?[]const u8,
@@ -17,6 +17,13 @@ const Error = error{ OutOfMemory, BadArgument, MissingName, MissingValue };
 pub fn parse(allocator: std.mem.Allocator, args: []const []const u8) !struct { []const Arg, []const []const u8 } {
     var parsed_args = try std.ArrayList(Arg).initCapacity(allocator, args.len);
     defer parsed_args.deinit();
+
+    if (args.len == 0) {
+        return .{
+            try parsed_args.toOwnedSlice(),
+            args[0..0],
+        };
+    }
 
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
@@ -76,17 +83,18 @@ pub fn parse(allocator: std.mem.Allocator, args: []const []const u8) !struct { [
                 if (idx == arg.len - 1) {
                     return Error.MissingValue;
                 }
+
                 try parsed_args.append(.{ .short = .{
                     .name = arg[1..idx],
                     .value = arg[idx + 1 ..],
                 } });
+                continue;
             }
 
             try parsed_args.append(.{ .short = .{
                 .name = arg[1..],
                 .value = null,
             } });
-
             continue;
         }
 
