@@ -3,7 +3,7 @@ const std = @import("std");
 const Binding = @import("binding.zig");
 const Parser = @import("parser.zig");
 
-pub fn init(comptime T: type) type {
+pub fn WithContext(comptime T: type) type {
     return struct {
         const Cmd = @This();
 
@@ -28,12 +28,12 @@ pub fn init(comptime T: type) type {
         long_help: ?[]const u8 = null,
         /// Group under which the command will show in the `help` output
         group: ?[]const u8 = null,
-        /// Action to for this command
-        action: Action,
         /// Flags
-        flags: ?[]const Flag,
+        flags: ?[]const Flag = null,
         /// Positional arguments
         args: ?[]const PositionalArg = null,
+        /// Action to for this command
+        action: Action,
 
         const Action = union(enum) {
             /// Action this command will run
@@ -44,7 +44,15 @@ pub fn init(comptime T: type) type {
         const ActionFn = *const fn (allocator: std.mem.Allocator, cmd: *const Cmd, ctx: Context) anyerror!void;
 
         /// Run the command using the given args slice
-        pub fn run(self: *const Cmd, allocator: std.mem.Allocator, command_args: [][]const u8, data: *T) !void {
+        pub fn run(self: *const Cmd, allocator: std.mem.Allocator, data: *T) !void {
+            const args = try std.process.argsAlloc(allocator);
+            defer std.process.argsFree(allocator, args);
+
+            return self.runArgs(allocator, if (args.len == 1) args[0..0] else args[1..], data);
+        }
+
+        /// Run the command using the given args slice
+        pub fn runArgs(self: *const Cmd, allocator: std.mem.Allocator, command_args: [][]const u8, data: *T) !void {
             const parsed_args, const passthrough_args = try Parser.parse(allocator, command_args);
             defer allocator.free(parsed_args);
 
@@ -64,14 +72,18 @@ pub fn init(comptime T: type) type {
                         if (cmd.flags) |flags| {
                             var found = false;
                             for (short.name, 0..) |name, index| {
-                                for (flags) |flag| {
+                                for (flags) |*flag| {
                                     if (flag.short_name == null or flag.short_name.? != name) {
                                         continue;
                                     }
-                                    var binding = flag.binding;
-                                    try binding.parse(blk: {
+                                    if (!flag.allow_multiple and flag.binding.count > 0) {
+                                        std.debug.print("Flag already set: {c}\n", .{name});
+                                        return Error.FlagAlreadySet;
+                                    }
+                                    // TODO: Probably should do something about the const cast...
+                                    try @constCast(&flag.binding).parse(blk: {
                                         if (index == short.name.len - 1) {
-                                            if (consumePositional(short.value, binding, parsed_args[i..])) {
+                                            if (consumePositional(short.value, flag.binding, parsed_args[i..])) {
                                                 i += 1;
                                                 break :blk parsed_args[i].positional;
                                             }
@@ -95,13 +107,17 @@ pub fn init(comptime T: type) type {
                     .long => |long| {
                         if (cmd.flags) |flags| {
                             var found = false;
-                            for (flags) |flag| {
+                            for (flags) |*flag| {
                                 if (!std.mem.eql(u8, flag.long_name, long.name)) {
                                     continue;
                                 }
-                                var binding = flag.binding;
-                                try binding.parse(blk: {
-                                    if (consumePositional(long.value, binding, parsed_args[i..])) {
+                                if (!flag.allow_multiple and flag.binding.count > 0) {
+                                    std.debug.print("Flag already set: {s}\n", .{long.name});
+                                    return Error.FlagAlreadySet;
+                                }
+                                // TODO: Probably should do something about the const cast...
+                                try @constCast(&flag.binding).parse(blk: {
+                                    if (consumePositional(long.value, flag.binding, parsed_args[i..])) {
                                         i += 1;
                                         break :blk parsed_args[i].positional;
                                     }
@@ -123,8 +139,8 @@ pub fn init(comptime T: type) type {
                         .run => {
                             if (cmd.args) |positionals| {
                                 if (pos < positionals.len) {
-                                    var binding = positionals[pos].binding;
-                                    try binding.parse(positional);
+                                    // TODO: Probably should do something about the const cast...
+                                    try @constCast(&positionals[pos].binding).parse(positional);
                                     pos += 1;
                                 } else {
                                     return Error.TooManyArguments;
@@ -204,6 +220,7 @@ const Flag = struct {
     long_name: []const u8,
     short_name: ?u8 = null,
     required: bool = false,
+    allow_multiple: bool = false,
     help: ?[]const u8 = null,
     value_name: []const u8 = "VALUE",
     binding: Binding,
@@ -224,4 +241,5 @@ const Error = error{
     MissingRequiredArg,
     UnknownFlag,
     UnknownCommand,
+    FlagAlreadySet,
 };

@@ -6,7 +6,7 @@ target: *anyopaque,
 count: usize = 0,
 metadata: MetaData,
 
-pub fn bindTo(target: anytype) Binding {
+pub fn bind(target: anytype) Binding {
     const T = @typeInfo(@TypeOf(target)).Pointer.child;
 
     switch (@typeInfo(T)) {

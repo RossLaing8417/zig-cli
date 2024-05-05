@@ -9,23 +9,42 @@ const Options = struct {
     unsigned: u32 = 0,
     float: f32 = 0,
     slice: ?[]const u8 = null,
+    sub: struct { bool: bool = false } = .{},
+    other: struct { bool: bool = false } = .{},
 };
 
-const Cmd = Command.init(Options);
+const Cmd = Command.WithContext(Options);
 
 pub fn main() !void {
     var options: Options = .{};
 
     var cmd = Cmd{
-        .name = "woot",
-        .action = .{ .run = &execute },
+        .name = "root",
         .flags = &.{
-            .{ .long_name = "bool", .short_name = 'b', .binding = Binding.bindTo(&options.bool) },
-            .{ .long_name = "signed", .short_name = 'i', .binding = Binding.bindTo(&options.signed) },
-            .{ .long_name = "unsigned", .short_name = 'u', .binding = Binding.bindTo(&options.unsigned) },
-            .{ .long_name = "float", .short_name = 'f', .binding = Binding.bindTo(&options.float) },
-            .{ .long_name = "slice", .short_name = 's', .binding = Binding.bindTo(&options.slice) },
+            .{ .long_name = "bool", .short_name = 'b', .binding = Binding.bind(&options.bool) },
+            .{ .long_name = "signed", .short_name = 'i', .binding = Binding.bind(&options.signed) },
+            .{ .long_name = "unsigned", .short_name = 'u', .binding = Binding.bind(&options.unsigned) },
+            .{ .long_name = "float", .short_name = 'f', .binding = Binding.bind(&options.float) },
+            .{ .long_name = "slice", .short_name = 's', .binding = Binding.bind(&options.slice) },
         },
+        // Action is either a function to run or a list of possible sub commands
+        // .action = .{ .run = &execute },
+        .action = .{ .commands = &.{
+            .{
+                .name = "sub",
+                .flags = &.{
+                    .{ .long_name = "sub-command", .short_name = 'S', .binding = Binding.bind(&options.sub.bool) },
+                },
+                .action = .{ .run = &execute },
+            },
+            .{
+                .name = "other",
+                .flags = &.{
+                    .{ .long_name = "other-command", .short_name = 'O', .binding = Binding.bind(&options.other.bool) },
+                },
+                .action = .{ .run = &execute },
+            },
+        } },
     };
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -33,10 +52,7 @@ pub fn main() !void {
 
     const allocator = gpa.allocator();
 
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
-
-    try cmd.run(allocator, if (args.len == 1) args[0..0] else args[1..], &options);
+    try cmd.run(allocator, &options);
 }
 
 fn execute(_: std.mem.Allocator, _: *const Cmd, ctx: Cmd.Context) !void {
