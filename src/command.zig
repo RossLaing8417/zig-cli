@@ -32,8 +32,16 @@ pub fn WithContext(comptime T: type) type {
         flags: ?[]const Flag = null,
         /// Positional arguments
         args: ?[]const PositionalArg = null,
+        /// Function to initialize the command (root cmd only at the moment)
+        init: ?InitFn = null,
+        /// Function to deinitialize the command (root cmd only at the moment)
+        deinit: ?DeinitFn = null,
         /// Action to for this command
         action: Action,
+
+        const InitFn = *const fn (allocator: std.mem.Allocator, cmd: *const Cmd, data: *T) anyerror!void;
+        const DeinitFn = *const fn (allocator: std.mem.Allocator, cmd: *const Cmd, data: *T) void;
+        const ActionFn = *const fn (allocator: std.mem.Allocator, cmd: *const Cmd, ctx: Context) anyerror!void;
 
         const Action = union(enum) {
             /// Action this command will run
@@ -41,7 +49,6 @@ pub fn WithContext(comptime T: type) type {
             /// Sub commands available to run
             commands: []const Cmd,
         };
-        const ActionFn = *const fn (allocator: std.mem.Allocator, cmd: *const Cmd, ctx: Context) anyerror!void;
 
         /// Run the command using the given args slice
         pub fn run(self: *const Cmd, allocator: std.mem.Allocator, data: *T) !void {
@@ -61,6 +68,13 @@ pub fn WithContext(comptime T: type) type {
 
             var cmd = self;
             try command_stack.append(cmd);
+
+            if (self.init) |init| {
+                try init(allocator, self, data);
+            }
+            defer if (self.deinit) |deinit| {
+                deinit(allocator, self, data);
+            };
 
             var pos: usize = 0;
             var i: usize = 0;
@@ -158,6 +172,9 @@ pub fn WithContext(comptime T: type) type {
                                 cmd = command;
                                 found = true;
                                 try command_stack.append(cmd);
+                                if (cmd.init) |init| {
+                                    try init(allocator, cmd, data);
+                                }
                                 break;
                             }
                             if (!found) {
@@ -192,6 +209,7 @@ pub fn WithContext(comptime T: type) type {
                 .run => |action| action,
                 .commands => return Error.MissingSubCommands,
             };
+
             try action(allocator, cmd, .{
                 .data = data,
                 .passthrough_args = passthrough_args,

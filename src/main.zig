@@ -29,6 +29,8 @@ pub fn main() !void {
         },
         // Action is either a function to run or a list of possible sub commands
         // .action = .{ .run = &execute },
+        .init = &init,
+        .deinit = &deinit,
         .action = .{ .commands = &.{
             .{
                 .name = "sub",
@@ -53,6 +55,14 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     try cmd.run(allocator, &options);
+}
+
+fn init(_: std.mem.Allocator, _: *const Cmd, _: *Options) !void {
+    std.debug.print("init\n", .{});
+}
+
+fn deinit(_: std.mem.Allocator, _: *const Cmd, _: *Options) void {
+    std.debug.print("deinit\n", .{});
 }
 
 fn execute(_: std.mem.Allocator, _: *const Cmd, ctx: Cmd.Context) !void {
