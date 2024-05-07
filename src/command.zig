@@ -36,8 +36,12 @@ pub fn WithContext(comptime T: type) type {
         init: ?InitFn = null,
         /// Function to deinitialize the command (root cmd only at the moment)
         deinit: ?DeinitFn = null,
+        /// Function to execute before the action
+        pre_action: ?ActionFn = null,
         /// Action to for this command
         action: Action,
+        /// Function to execute after the action
+        post_action: ?ActionFn = null,
 
         const InitFn = *const fn (allocator: std.mem.Allocator, cmd: *const Cmd, data: *T) anyerror!void;
         const DeinitFn = *const fn (allocator: std.mem.Allocator, cmd: *const Cmd, data: *T) void;
@@ -209,11 +213,25 @@ pub fn WithContext(comptime T: type) type {
                 .run => |action| action,
                 .commands => return Error.MissingSubCommands,
             };
-
-            try action(allocator, cmd, .{
+            const ctx: Context = .{
                 .data = data,
                 .passthrough_args = passthrough_args,
-            });
+            };
+
+            for (command_stack.items) |command| {
+                if (command.pre_action) |pre_action| {
+                    try pre_action(allocator, command, ctx);
+                }
+            }
+
+            try action(allocator, cmd, ctx);
+
+            for (0..command_stack.items.len) |idx| {
+                const command = command_stack.items[command_stack.items.len - 1 - idx];
+                if (command.post_action) |post_action| {
+                    try post_action(allocator, command, ctx);
+                }
+            }
         }
     };
 }

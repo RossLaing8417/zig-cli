@@ -31,6 +31,8 @@ pub fn main() !void {
         // .action = .{ .run = &execute },
         .init = &init,
         .deinit = &deinit,
+        .pre_action = &pre,
+        .post_action = &post,
         .action = .{ .commands = &.{
             .{
                 .name = "sub",
@@ -63,6 +65,14 @@ fn init(_: std.mem.Allocator, _: *const Cmd, _: *Options) !void {
 
 fn deinit(_: std.mem.Allocator, _: *const Cmd, _: *Options) void {
     std.debug.print("deinit\n", .{});
+}
+
+fn pre(_: std.mem.Allocator, _: *const Cmd, _: Cmd.Context) !void {
+    std.debug.print("pre\n", .{});
+}
+
+fn post(_: std.mem.Allocator, _: *const Cmd, _: Cmd.Context) !void {
+    std.debug.print("post\n", .{});
 }
 
 fn execute(_: std.mem.Allocator, _: *const Cmd, ctx: Cmd.Context) !void {
