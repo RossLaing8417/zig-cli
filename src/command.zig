@@ -10,7 +10,19 @@ pub fn WithContext(comptime T: type) type {
         pub const Context = struct {
             data: *T,
             passthrough_args: []const []const u8,
+            commands: []*const Cmd,
         };
+
+        const Action = union(enum) {
+            /// Action this command will run
+            run: ActionFn,
+            /// Sub commands available to run
+            commands: []const Cmd,
+        };
+
+        const InitFn = *const fn (allocator: std.mem.Allocator, cmd: *const Cmd, data: *T) anyerror!void;
+        const DeinitFn = *const fn (allocator: std.mem.Allocator, cmd: *const Cmd, data: *T) void;
+        const ActionFn = *const fn (allocator: std.mem.Allocator, cmd: *const Cmd, ctx: Context) anyerror!void;
 
         /// Name of the command
         name: []const u8,
@@ -43,17 +55,6 @@ pub fn WithContext(comptime T: type) type {
         /// Function to execute after the action
         post_action: ?ActionFn = null,
 
-        const InitFn = *const fn (allocator: std.mem.Allocator, cmd: *const Cmd, data: *T) anyerror!void;
-        const DeinitFn = *const fn (allocator: std.mem.Allocator, cmd: *const Cmd, data: *T) void;
-        const ActionFn = *const fn (allocator: std.mem.Allocator, cmd: *const Cmd, ctx: Context) anyerror!void;
-
-        const Action = union(enum) {
-            /// Action this command will run
-            run: ActionFn,
-            /// Sub commands available to run
-            commands: []const Cmd,
-        };
-
         /// Run the command using the given args slice
         pub fn run(self: *const Cmd, allocator: std.mem.Allocator, data: *T) !void {
             const args = try std.process.argsAlloc(allocator);
@@ -67,18 +68,69 @@ pub fn WithContext(comptime T: type) type {
             const parsed_args, const passthrough_args = try Parser.parse(allocator, command_args);
             defer allocator.free(parsed_args);
 
-            var command_stack = std.ArrayList(*const Cmd).init(allocator);
-            defer command_stack.deinit();
-
-            var cmd = self;
-            try command_stack.append(cmd);
-
             if (self.init) |init| {
                 try init(allocator, self, data);
             }
             defer if (self.deinit) |deinit| {
                 deinit(allocator, self, data);
             };
+
+            const command_stack = try self.processArgs(allocator, parsed_args, data);
+            defer allocator.free(command_stack);
+
+            for (command_stack) |command| {
+                if (command.flags) |flags| {
+                    for (flags) |flag| {
+                        if (flag.required and flag.binding.count == 0) {
+                            std.debug.print("Required flag: {s}\n", .{flag.long_name});
+                            return Error.MissingRequiredFlag;
+                        }
+                    }
+                }
+                if (command.args) |args| {
+                    for (args) |arg| {
+                        if (arg.required and arg.binding.count == 0) {
+                            std.debug.print("Required flag: {s}\n", .{arg.name});
+                            return Error.MissingRequiredArg;
+                        }
+                    }
+                }
+            }
+
+            const cmd = command_stack[command_stack.len - 1];
+
+            const action = switch (cmd.action) {
+                .run => |action| action,
+                .commands => return Error.MissingSubCommands,
+            };
+            const ctx: Context = .{
+                .data = data,
+                .passthrough_args = passthrough_args,
+                .commands = command_stack,
+            };
+
+            for (command_stack) |command| {
+                if (command.pre_action) |pre_action| {
+                    try pre_action(allocator, command, ctx);
+                }
+            }
+
+            try action(allocator, cmd, ctx);
+
+            for (0..command_stack.len) |idx| {
+                const command = command_stack[command_stack.len - 1 - idx];
+                if (command.post_action) |post_action| {
+                    try post_action(allocator, command, ctx);
+                }
+            }
+        }
+
+        fn processArgs(self: *const Cmd, allocator: std.mem.Allocator, parsed_args: []const Parser.Arg, data: *T) ![]*const Cmd {
+            var command_stack = std.ArrayList(*const Cmd).init(allocator);
+            defer command_stack.deinit();
+
+            var cmd = self;
+            try command_stack.append(cmd);
 
             var pos: usize = 0;
             var i: usize = 0;
@@ -190,48 +242,7 @@ pub fn WithContext(comptime T: type) type {
                 }
             }
 
-            for (command_stack.items) |command| {
-                if (command.flags) |flags| {
-                    for (flags) |flag| {
-                        if (flag.required and flag.binding.count == 0) {
-                            std.debug.print("Required flag: {s}\n", .{flag.long_name});
-                            return Error.MissingRequiredFlag;
-                        }
-                    }
-                }
-                if (command.args) |args| {
-                    for (args) |arg| {
-                        if (arg.required and arg.binding.count == 0) {
-                            std.debug.print("Required flag: {s}\n", .{arg.name});
-                            return Error.MissingRequiredArg;
-                        }
-                    }
-                }
-            }
-
-            const action = switch (cmd.action) {
-                .run => |action| action,
-                .commands => return Error.MissingSubCommands,
-            };
-            const ctx: Context = .{
-                .data = data,
-                .passthrough_args = passthrough_args,
-            };
-
-            for (command_stack.items) |command| {
-                if (command.pre_action) |pre_action| {
-                    try pre_action(allocator, command, ctx);
-                }
-            }
-
-            try action(allocator, cmd, ctx);
-
-            for (0..command_stack.items.len) |idx| {
-                const command = command_stack.items[command_stack.items.len - 1 - idx];
-                if (command.post_action) |post_action| {
-                    try post_action(allocator, command, ctx);
-                }
-            }
+            return try command_stack.toOwnedSlice();
         }
     };
 }
