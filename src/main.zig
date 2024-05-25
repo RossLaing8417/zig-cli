@@ -1,7 +1,7 @@
 const std = @import("std");
 
 const Binding = @import("binding.zig");
-const Command = @import("command.zig");
+const Cmd = @import("command.zig");
 
 const Options = struct {
     bool: ?bool = null,
@@ -12,8 +12,6 @@ const Options = struct {
     sub: struct { bool: bool = false } = .{},
     other: struct { bool: bool = false } = .{},
 };
-
-const Cmd = Command.WithContext(Options);
 
 pub fn main() !void {
     var options: Options = .{};
@@ -59,11 +57,11 @@ pub fn main() !void {
     try cmd.run(allocator, &options);
 }
 
-fn init(_: std.mem.Allocator, _: *const Cmd, _: *Options) !void {
+fn init(_: std.mem.Allocator, _: *const Cmd, _: *anyopaque) !void {
     std.debug.print("init\n", .{});
 }
 
-fn deinit(_: std.mem.Allocator, _: *const Cmd, _: *Options) void {
+fn deinit(_: std.mem.Allocator, _: *const Cmd, _: *anyopaque) void {
     std.debug.print("deinit\n", .{});
 }
 
@@ -76,7 +74,8 @@ fn post(_: std.mem.Allocator, _: *const Cmd, _: Cmd.Context) !void {
 }
 
 fn execute(_: std.mem.Allocator, _: *const Cmd, ctx: Cmd.Context) !void {
-    std.debug.print("OMG!\n{any}\n", .{ctx.data});
+    const options: *Options = @ptrCast(@alignCast(ctx.data));
+    std.debug.print("OMG!\n{any}\n", .{options});
 }
 
 test {
