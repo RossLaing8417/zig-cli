@@ -6,6 +6,49 @@ const Binding = @import("binding.zig");
 const Parser = @import("parser.zig");
 const Help = @import("help.zig");
 
+/// Name of the command
+name: []const u8,
+/// The command version
+version: ?[]const u8 = null,
+/// Short help to print adjacent to the command name, will be shown in the `help` output
+short_help: ?[]const u8 = null,
+/// Detailed message to describe the command usage, will be shown in the `help` output
+long_help: ?[]const u8 = null,
+/// Detailed message to describe the purpose of the command
+description: ?[]const u8 = null,
+/// Flags
+flags: ?[]const Flag = null,
+/// Positional arguments
+args: ?[]const PositionalArg = null,
+/// Function to initialize the command (root cmd only at the moment)
+init: ?InitFn = null,
+/// Function to deinitialize the command (root cmd only at the moment)
+deinit: ?DeinitFn = null,
+/// Function to execute before the action
+pre_action: ?ActionFn = null,
+/// Action to for this command
+action: Action,
+/// Function to execute after the action
+post_action: ?ActionFn = null,
+
+const Flag = struct {
+    long_name: []const u8,
+    short_name: ?u8 = null,
+    required: bool = false,
+    allow_multiple: bool = false,
+    help: ?[]const u8 = null,
+    value_name: []const u8 = "VALUE",
+    binding: Binding,
+};
+
+const PositionalArg = struct {
+    name: []const u8,
+    required: bool = false,
+    // at_least: ?usize = null,
+    // at_most: ?usize = null,
+    binding: Binding,
+};
+
 pub const Context = struct {
     data: *anyopaque,
     passthrough_args: []const []const u8,
@@ -22,35 +65,6 @@ const Action = union(enum) {
 const InitFn = *const fn (allocator: std.mem.Allocator, cmd: *const Cmd, data: *anyopaque) anyerror!void;
 const DeinitFn = *const fn (allocator: std.mem.Allocator, cmd: *const Cmd, data: *anyopaque) void;
 const ActionFn = *const fn (allocator: std.mem.Allocator, cmd: *const Cmd, ctx: Context) anyerror!void;
-
-/// Name of the command
-name: []const u8,
-/// The command version
-version: ?[]const u8 = null,
-/// Message to print out if the command is depreciated
-depreciated: ?[]const u8 = null,
-/// Example of how to use the command
-example: ?[]const u8 = null,
-/// Short description, will be shown in the `help` output
-short_help: ?[]const u8 = null,
-/// Detailed message, will be shown in the `help <command>` output
-long_help: ?[]const u8 = null,
-/// Group under which the command will show in the `help` output
-group: ?[]const u8 = null,
-/// Flags
-flags: ?[]const Flag = null,
-/// Positional arguments
-args: ?[]const PositionalArg = null,
-/// Function to initialize the command (root cmd only at the moment)
-init: ?InitFn = null,
-/// Function to deinitialize the command (root cmd only at the moment)
-deinit: ?DeinitFn = null,
-/// Function to execute before the action
-pre_action: ?ActionFn = null,
-/// Action to for this command
-action: Action,
-/// Function to execute after the action
-post_action: ?ActionFn = null,
 
 /// Run the command using the given args slice
 pub fn run(self: *const Cmd, allocator: std.mem.Allocator, data: *anyopaque) !void {
@@ -72,10 +86,10 @@ pub fn runArgs(self: *const Cmd, allocator: std.mem.Allocator, command_args: [][
         deinit(allocator, self, data);
     };
 
-    const command_stack = try self.processArgs(allocator, parsed_args, data);
-    defer allocator.free(command_stack);
+    const commands = try self.processArgs(allocator, parsed_args, data);
+    defer allocator.free(commands);
 
-    for (command_stack) |command| {
+    for (commands) |command| {
         if (command.flags) |flags| {
             for (flags) |flag| {
                 if (flag.required and flag.binding.count == 0) {
@@ -94,19 +108,19 @@ pub fn runArgs(self: *const Cmd, allocator: std.mem.Allocator, command_args: [][
         }
     }
 
-    const cmd = command_stack[command_stack.len - 1];
+    const cmd = commands[commands.len - 1];
 
     const action = switch (cmd.action) {
         .run => |action| action,
-        .commands => return Error.MissingSubCommands,
+        .commands => Help.printHelpError(commands),
     };
     const ctx: Context = .{
         .data = data,
         .passthrough_args = passthrough_args,
-        .commands = command_stack,
+        .commands = commands,
     };
 
-    for (command_stack) |command| {
+    for (commands) |command| {
         if (command.pre_action) |pre_action| {
             try pre_action(allocator, command, ctx);
         }
@@ -114,8 +128,8 @@ pub fn runArgs(self: *const Cmd, allocator: std.mem.Allocator, command_args: [][
 
     try action(allocator, cmd, ctx);
 
-    for (0..command_stack.len) |idx| {
-        const command = command_stack[command_stack.len - 1 - idx];
+    for (0..commands.len) |idx| {
+        const command = commands[commands.len - 1 - idx];
         if (command.post_action) |post_action| {
             try post_action(allocator, command, ctx);
         }
@@ -163,7 +177,8 @@ fn processArgs(self: *const Cmd, allocator: std.mem.Allocator, parsed_args: []co
                         }
                         if (!found) {
                             switch (name) {
-                                'v' => Help.printVersion(cmd),
+                                'h' => Help.printHelp(command_stack.items),
+                                'v' => if (cmd == self) Help.printVersion(cmd),
                                 else => {},
                             }
                             std.debug.print("Unknown flag: {c}\n", .{name});
@@ -172,7 +187,8 @@ fn processArgs(self: *const Cmd, allocator: std.mem.Allocator, parsed_args: []co
                     }
                 } else {
                     switch (short.name[0]) {
-                        'v' => Help.printVersion(cmd),
+                        'h' => Help.printHelp(command_stack.items),
+                        'v' => if (cmd == self) Help.printVersion(cmd),
                         else => {},
                     }
                     std.debug.print("Unknown flag: {s}\n", .{short.name});
@@ -203,6 +219,7 @@ fn processArgs(self: *const Cmd, allocator: std.mem.Allocator, parsed_args: []co
                     }
                     if (!found) {
                         if (std.mem.eql(u8, long.name, "help")) {
+                            Help.printHelp(command_stack.items);
                         } else if (cmd == self and std.mem.eql(u8, long.name, "version")) {
                             Help.printVersion(cmd);
                         }
@@ -211,6 +228,7 @@ fn processArgs(self: *const Cmd, allocator: std.mem.Allocator, parsed_args: []co
                     }
                 } else {
                     if (std.mem.eql(u8, long.name, "help")) {
+                        Help.printHelp(command_stack.items);
                     } else if (cmd == self and std.mem.eql(u8, long.name, "version")) {
                         Help.printVersion(cmd);
                     }
@@ -281,27 +299,8 @@ pub fn exit(status: u8, message: ?[]const u8) noreturn {
     std.process.exit(status);
 }
 
-const Flag = struct {
-    long_name: []const u8,
-    short_name: ?u8 = null,
-    required: bool = false,
-    allow_multiple: bool = false,
-    help: ?[]const u8 = null,
-    value_name: []const u8 = "VALUE",
-    binding: Binding,
-};
-
-const PositionalArg = struct {
-    name: []const u8,
-    required: bool = false,
-    // at_least: ?usize = null,
-    // at_most: ?usize = null,
-    binding: Binding,
-};
-
 const Error = error{
     TooManyArguments,
-    MissingSubCommands,
     MissingRequiredFlag,
     MissingRequiredArg,
     UnknownFlag,

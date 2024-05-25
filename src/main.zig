@@ -17,14 +17,26 @@ pub fn main() !void {
     var options: Options = .{};
 
     var cmd = Cmd{
-        .name = "root",
+        .name = "zig-cli",
         .version = "0.69.420",
+        .short_help = "making things go pop",
+        .long_help =
+        \\sub [-S | --sub-command]
+        \\other [-O | --other-command]
+        ,
+        .description =
+        \\type things and see what happens
+        ,
         .flags = &.{
-            .{ .long_name = "bool", .short_name = 'b', .binding = Binding.bind(&options.bool) },
-            .{ .long_name = "signed", .short_name = 'i', .binding = Binding.bind(&options.signed) },
-            .{ .long_name = "unsigned", .short_name = 'u', .binding = Binding.bind(&options.unsigned) },
-            .{ .long_name = "float", .short_name = 'f', .binding = Binding.bind(&options.float) },
-            .{ .long_name = "slice", .short_name = 's', .binding = Binding.bind(&options.slice) },
+            .{ .long_name = "bool", .short_name = 'b', .help = "bool flag", .binding = Binding.bind(&options.bool) },
+            .{ .long_name = "signed", .short_name = 'i', .help = "signed flag", .binding = Binding.bind(&options.signed) },
+            .{ .long_name = "unsigned", .short_name = 'u', .help = "unsigned flag", .binding = Binding.bind(&options.unsigned) },
+            .{ .long_name = "float", .short_name = 'f', .help = "float flag", .binding = Binding.bind(&options.float) },
+            .{ .long_name = "slice", .short_name = 's', .help = "slice flag", .binding = Binding.bind(&options.slice) },
+            .{ .long_name = "tiny", .binding = Binding.bind(&options.bool) },
+            .{ .long_name = "short", .short_name = 't', .binding = Binding.bind(&options.bool) },
+            .{ .long_name = "longish", .binding = Binding.bind(&options.bool) },
+            .{ .long_name = "really-long", .short_name = 'l', .binding = Binding.bind(&options.bool) },
         },
         // Action is either a function to run or a list of possible sub commands
         // .action = .{ .run = &execute },
@@ -35,6 +47,13 @@ pub fn main() !void {
         .action = .{ .commands = &.{
             .{
                 .name = "sub",
+                .short_help = "magic things",
+                .long_help =
+                \\nothing to see here...
+                ,
+                .description =
+                \\nothing to see here...
+                ,
                 .flags = &.{
                     .{ .long_name = "sub-command", .short_name = 'S', .binding = Binding.bind(&options.sub.bool) },
                 },
@@ -42,6 +61,13 @@ pub fn main() !void {
             },
             .{
                 .name = "other",
+                .short_help = "good times",
+                .long_help =
+                \\nothing to see here...
+                ,
+                .description =
+                \\nothing to see here...
+                ,
                 .flags = &.{
                     .{ .long_name = "other-command", .short_name = 'O', .binding = Binding.bind(&options.other.bool) },
                 },

@@ -7,8 +7,11 @@ Inspired by [urfave/cli](https://github.com/urfave/cli) and partly [spf13/cobra]
 Also following [clig.dev](https://clig.dev/) as a sort of standard guideline
 
 ## Features
- - long and short flags: `--foo` and `-f`
- - concatinating short flags: `-abc` same as `-a -b -c`
- - optional usage of `=`: `--foo bar` or `--foo=bar`
- - binds to a given variable address and automatically sets the value
- - passes context to the called functions
+- long and short flags: `--foo` and `-f`
+- concatinating short flags: `-abc` same as `-a -b -c`
+- optional usage of `=`: `--foo bar` or `--foo=bar`
+- binds to a given variable address and automatically sets the value
+- automatic help and version flag
+- prints shorted help when missing sub command arg
+- pre and post actions
+- passes context to the called functions (including args found after parsing `--`)
