@@ -18,6 +18,7 @@ pub fn main() !void {
 
     var cmd = Cmd{
         .name = "root",
+        .version = "0.69.420",
         .flags = &.{
             .{ .long_name = "bool", .short_name = 'b', .binding = Binding.bind(&options.bool) },
             .{ .long_name = "signed", .short_name = 'i', .binding = Binding.bind(&options.signed) },

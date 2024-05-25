@@ -4,6 +4,7 @@ const Cmd = @This();
 
 const Binding = @import("binding.zig");
 const Parser = @import("parser.zig");
+const Help = @import("help.zig");
 
 pub const Context = struct {
     data: *anyopaque,
@@ -24,8 +25,6 @@ const ActionFn = *const fn (allocator: std.mem.Allocator, cmd: *const Cmd, ctx: 
 
 /// Name of the command
 name: []const u8,
-/// List of aliases to use instead of the name
-aliases: ?[][]const u8 = null,
 /// The command version
 version: ?[]const u8 = null,
 /// Message to print out if the command is depreciated
@@ -163,11 +162,19 @@ fn processArgs(self: *const Cmd, allocator: std.mem.Allocator, parsed_args: []co
                             break;
                         }
                         if (!found) {
+                            switch (name) {
+                                'v' => Help.printVersion(cmd),
+                                else => {},
+                            }
                             std.debug.print("Unknown flag: {c}\n", .{name});
                             return Error.UnknownFlag;
                         }
                     }
                 } else {
+                    switch (short.name[0]) {
+                        'v' => Help.printVersion(cmd),
+                        else => {},
+                    }
                     std.debug.print("Unknown flag: {s}\n", .{short.name});
                     return Error.UnknownFlag;
                 }
@@ -195,10 +202,18 @@ fn processArgs(self: *const Cmd, allocator: std.mem.Allocator, parsed_args: []co
                         break;
                     }
                     if (!found) {
+                        if (std.mem.eql(u8, long.name, "help")) {
+                        } else if (cmd == self and std.mem.eql(u8, long.name, "version")) {
+                            Help.printVersion(cmd);
+                        }
                         std.debug.print("Unknown flag: {s}\n", .{long.name});
                         return Error.UnknownFlag;
                     }
                 } else {
+                    if (std.mem.eql(u8, long.name, "help")) {
+                    } else if (cmd == self and std.mem.eql(u8, long.name, "version")) {
+                        Help.printVersion(cmd);
+                    }
                     std.debug.print("Unknown flag: {s}\n", .{long.name});
                     return Error.UnknownFlag;
                 }
