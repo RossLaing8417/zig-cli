@@ -23,7 +23,7 @@ pub fn printHelpError(command_list: *const CommandList) noreturn {
 
 fn printCommandShortHelp(writer: std.fs.File.Writer, command_list: *const CommandList) !void {
     const commands = command_list.commands.items;
-    const exec_cmd = commands[commands.len - 1];
+    const exec_cmd = command_list.current();
     for (commands, 0..) |cmd, i| {
         if (i != 0) {
             try writer.writeByte(' ');
@@ -48,8 +48,8 @@ fn printCommandShortHelp(writer: std.fs.File.Writer, command_list: *const Comman
 
 fn printHelpWriter(writer: std.fs.File.Writer, command_list: *const CommandList) !void {
     const commands = command_list.commands.items;
-    const exec_cmd = commands[commands.len - 1];
-    const root_cmd = commands.len == 1;
+    const exec_cmd = command_list.current();
+    const is_root_cmd = exec_cmd == command_list.root();
 
     try writer.writeAll("NAME:\n    ");
     for (commands, 0..) |cmd, i| {
@@ -70,7 +70,7 @@ fn printHelpWriter(writer: std.fs.File.Writer, command_list: *const CommandList)
         try printIndented(writer, help);
     }
 
-    if (root_cmd) {
+    if (is_root_cmd) {
         if (exec_cmd.version) |version| {
             try writer.writeAll("\nVERSION:\n");
             try printIndented(writer, version);
