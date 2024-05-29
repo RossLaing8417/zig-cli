@@ -36,7 +36,8 @@ const ParseError = error{
     ParseIntError,
     ParseFloatError,
     ParseBoolError,
-    ParseSliceError,
+    ParseStringError,
+    ParseEnumError,
 };
 
 pub fn parse(self: *Binding, value: ?[]const u8) ParseError!void {
@@ -86,7 +87,15 @@ const MetaData = struct {
                 .size = @sizeOf(Type),
                 .parse = struct {
                     fn parse(target: *anyopaque, value: ?[]const u8) !void {
-                        try parseSlice(T, target, value);
+                        try parseString(T, target, value);
+                    }
+                }.parse,
+            },
+            .Enum => .{
+                .size = @sizeOf(Type),
+                .parse = struct {
+                    fn parse(target: *anyopaque, value: ?[]const u8) !void {
+                        try parseEnum(T, target, value);
                     }
                 }.parse,
             },
@@ -133,11 +142,25 @@ fn parseBool(comptime T: type, target: *anyopaque, value: ?[]const u8) ParseErro
     }
 }
 
-fn parseSlice(comptime T: type, target: *anyopaque, value: ?[]const u8) ParseError!void {
+fn parseString(comptime T: type, target: *anyopaque, value: ?[]const u8) ParseError!void {
     const ref: *T = @alignCast(@ptrCast(target));
     if (value) |val| {
         ref.* = val;
     } else {
-        return ParseError.ParseSliceError;
+        return ParseError.ParseStringError;
     }
+}
+
+fn parseEnum(comptime T: type, target: *anyopaque, value: ?[]const u8) ParseError!void {
+    if (value) |val| {
+        const ref: *T = @alignCast(@ptrCast(target));
+        const enum_info = @typeInfo(T).Enum;
+        inline for (enum_info.fields) |field| {
+            if (std.mem.eql(u8, field.name, val)) {
+                ref.* = @field(T, field.name);
+                return;
+            }
+        }
+    }
+    return ParseError.ParseEnumError;
 }

@@ -235,6 +235,7 @@ const Evaluator = struct {
         };
 
         var command_list = try CommandList.init(allocator, cmd);
+        errdefer command_list.deinit();
 
         while (evaluator.i < parsed_args.len) : (evaluator.i += 1) {
             const arg = parsed_args[evaluator.i];
