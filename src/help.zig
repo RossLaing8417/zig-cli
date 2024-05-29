@@ -6,19 +6,19 @@ const CommandList = Cmd.CommandList;
 pub fn printVersion(cmd: *const Cmd) noreturn {
     const writer = std.io.getStdOut().writer();
     writer.print("{s}\n", .{cmd.version orelse "unknown"}) catch |err| std.debug.print("{}\n", .{err});
-    Cmd.exit(0, null);
+    Cmd.exit(0);
 }
 
 pub fn printHelp(command_list: *const CommandList) noreturn {
     const writer = std.io.getStdOut().writer();
     printHelpWriter(writer, command_list) catch |err| std.debug.print("{}\n", .{err});
-    Cmd.exit(0, null);
+    Cmd.exit(0);
 }
 
 pub fn printHelpError(command_list: *const CommandList) noreturn {
     const writer = std.io.getStdErr().writer();
     printCommandShortHelp(writer, command_list) catch |err| std.debug.print("{}\n", .{err});
-    Cmd.exit(1, null);
+    Cmd.exit(1);
 }
 
 fn printCommandShortHelp(writer: std.fs.File.Writer, command_list: *const CommandList) !void {

@@ -95,16 +95,14 @@ pub fn runArgs(self: *const Cmd, allocator: std.mem.Allocator, command_args: [][
         if (command.flags) |flags| {
             for (flags) |flag| {
                 if (flag.required and flag.binding.count == 0) {
-                    std.debug.print("Required flag: {s}\n", .{flag.long_name});
-                    return Error.MissingRequiredFlag;
+                    exitMsg(1, "Required flag: {s}\n", .{flag.long_name});
                 }
             }
         }
         if (command.args) |args| {
             for (args) |arg| {
                 if (arg.required and arg.binding.count == 0) {
-                    std.debug.print("Required flag: {s}\n", .{arg.name});
-                    return Error.MissingRequiredArg;
+                    exitMsg(1, "Required flag: {s}\n", .{arg.name});
                 }
             }
         }
@@ -138,37 +136,14 @@ pub fn runArgs(self: *const Cmd, allocator: std.mem.Allocator, command_args: [][
     }
 }
 
-fn consumePositional(value: ?[]const u8, binding: Binding, args: []const Parser.Arg) bool {
-    if (value != null) {
-        return false;
-    }
-    if (binding.metadata.bool == true) {
-        return false;
-    }
-    if (args.len == 1) {
-        return false;
-    }
-    if (args[1] != .positional) {
-        return false;
-    }
-    return true;
-}
-
-pub fn exit(status: u8, message: ?[]const u8) noreturn {
-    if (message) |msg| {
-        std.debug.print("{s}\n", .{msg});
-    }
+pub fn exit(status: u8) noreturn {
     std.process.exit(status);
 }
 
-const Error = error{
-    TooManyArguments,
-    MissingRequiredFlag,
-    MissingRequiredArg,
-    UnknownFlag,
-    UnknownCommand,
-    FlagAlreadySet,
-};
+pub fn exitMsg(status: u8, comptime fmt: []const u8, args: anytype) noreturn {
+    std.debug.print(fmt, args);
+    std.process.exit(status);
+}
 
 pub const CommandList = struct {
     allocator: std.mem.Allocator,
@@ -237,8 +212,7 @@ const Evaluator = struct {
                         continue;
                     }
                     if (!flag.allow_multiple and flag.binding.count > 0) {
-                        std.debug.print("Flag already set: {c}\n", .{name});
-                        return Error.FlagAlreadySet;
+                        exitMsg(1, "Flag already set: {c}\n", .{name});
                     }
                     // TODO: Probably should do something about the const cast...
                     try @constCast(&flag.binding).parse(blk: {
@@ -260,8 +234,7 @@ const Evaluator = struct {
                         'v' => if (cmd == command_list.root()) Help.printVersion(cmd),
                         else => {},
                     }
-                    std.debug.print("Unknown flag: {c}\n", .{name});
-                    return Error.UnknownFlag;
+                    exitMsg(1, "Unknown flag: {c}\n", .{name});
                 }
             }
         } else {
@@ -270,8 +243,7 @@ const Evaluator = struct {
                 'v' => if (cmd == command_list.root()) Help.printVersion(cmd),
                 else => {},
             }
-            std.debug.print("Unknown flag: {s}\n", .{arg.name});
-            return Error.UnknownFlag;
+            exitMsg(1, "Unknown flag: {s}\n", .{arg.name});
         }
     }
 
@@ -284,8 +256,7 @@ const Evaluator = struct {
                     continue;
                 }
                 if (!flag.allow_multiple and flag.binding.count > 0) {
-                    std.debug.print("Flag already set: {s}\n", .{arg.name});
-                    return Error.FlagAlreadySet;
+                    exitMsg(1, "Flag already set: {s}\n", .{arg.name});
                 }
                 // TODO: Probably should do something about the const cast...
                 try @constCast(&flag.binding).parse(blk: {
@@ -304,8 +275,7 @@ const Evaluator = struct {
                 } else if (cmd == command_list.root() and std.mem.eql(u8, arg.name, "version")) {
                     Help.printVersion(cmd);
                 }
-                std.debug.print("Unknown flag: {s}\n", .{arg.name});
-                return Error.UnknownFlag;
+                exitMsg(1, "Unknown flag: {s}\n", .{arg.name});
             }
         } else {
             if (std.mem.eql(u8, arg.name, "help")) {
@@ -313,8 +283,7 @@ const Evaluator = struct {
             } else if (cmd == command_list.root() and std.mem.eql(u8, arg.name, "version")) {
                 Help.printVersion(cmd);
             }
-            std.debug.print("Unknown flag: {s}\n", .{arg.name});
-            return Error.UnknownFlag;
+            exitMsg(1, "Unknown flag: {s}\n", .{arg.name});
         }
     }
 
@@ -328,10 +297,10 @@ const Evaluator = struct {
                         try @constCast(&positionals[self.pos].binding).parse(positional);
                         self.pos += 1;
                     } else {
-                        return Error.TooManyArguments;
+                        exitMsg(1, "Too many arguments\n", .{});
                     }
                 } else {
-                    return Error.TooManyArguments;
+                    exitMsg(1, "Too many arguments\n", .{});
                 }
             },
             .commands => |commands| {
@@ -348,10 +317,25 @@ const Evaluator = struct {
                     break;
                 }
                 if (!found) {
-                    std.debug.print("Unknown command: {s}\n", .{positional});
-                    return Error.UnknownCommand;
+                    exitMsg(1, "Unknown command: {s}\n", .{positional});
                 }
             },
         }
+    }
+
+    fn consumePositional(value: ?[]const u8, binding: Binding, args: []const Parser.Arg) bool {
+        if (value != null) {
+            return false;
+        }
+        if (binding.metadata.bool == true) {
+            return false;
+        }
+        if (args.len == 1) {
+            return false;
+        }
+        if (args[1] != .positional) {
+            return false;
+        }
+        return true;
     }
 };
