@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const Cmd = @import("command.zig");
+const CommandList = Cmd.CommandList;
 
 pub fn printVersion(cmd: *const Cmd) noreturn {
     const writer = std.io.getStdOut().writer();
@@ -8,19 +9,20 @@ pub fn printVersion(cmd: *const Cmd) noreturn {
     Cmd.exit(0, null);
 }
 
-pub fn printHelp(commands: []*const Cmd) noreturn {
+pub fn printHelp(command_list: *const CommandList) noreturn {
     const writer = std.io.getStdOut().writer();
-    printHelpWriter(writer, commands) catch |err| std.debug.print("{}\n", .{err});
+    printHelpWriter(writer, command_list) catch |err| std.debug.print("{}\n", .{err});
     Cmd.exit(0, null);
 }
 
-pub fn printHelpError(commands: []*const Cmd) noreturn {
+pub fn printHelpError(command_list: *const CommandList) noreturn {
     const writer = std.io.getStdErr().writer();
-    printCommandShortHelp(writer, commands) catch |err| std.debug.print("{}\n", .{err});
+    printCommandShortHelp(writer, command_list) catch |err| std.debug.print("{}\n", .{err});
     Cmd.exit(1, null);
 }
 
-fn printCommandShortHelp(writer: std.fs.File.Writer, commands: []*const Cmd) !void {
+fn printCommandShortHelp(writer: std.fs.File.Writer, command_list: *const CommandList) !void {
+    const commands = command_list.commands.items;
     const exec_cmd = commands[commands.len - 1];
     for (commands, 0..) |cmd, i| {
         if (i != 0) {
@@ -44,7 +46,8 @@ fn printCommandShortHelp(writer: std.fs.File.Writer, commands: []*const Cmd) !vo
     }
 }
 
-fn printHelpWriter(writer: std.fs.File.Writer, commands: []*const Cmd) !void {
+fn printHelpWriter(writer: std.fs.File.Writer, command_list: *const CommandList) !void {
+    const commands = command_list.commands.items;
     const exec_cmd = commands[commands.len - 1];
     const root_cmd = commands.len == 1;
 

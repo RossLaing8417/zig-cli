@@ -1,15 +1,14 @@
 const std = @import("std");
 
 pub const Arg = union(enum) {
-    short: struct {
-        name: []const u8,
-        value: ?[]const u8,
-    },
-    long: struct {
-        name: []const u8,
-        value: ?[]const u8,
-    },
+    short: Flag,
+    long: Flag,
     positional: []const u8,
+
+    pub const Flag = struct {
+        name: []const u8,
+        value: ?[]const u8,
+    };
 };
 
 const Error = error{ OutOfMemory, BadArgument, MissingName, MissingValue };
