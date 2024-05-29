@@ -11,6 +11,7 @@ const Options = struct {
     slice: ?[]const u8 = null,
     sub: struct { bool: bool = false } = .{},
     other: struct { bool: bool = false } = .{},
+    persistent: ?bool = null,
 };
 
 pub fn main() !void {
@@ -37,6 +38,7 @@ pub fn main() !void {
             .{ .long_name = "short", .short_name = 't', .binding = Binding.bind(&options.bool) },
             .{ .long_name = "longish", .binding = Binding.bind(&options.bool) },
             .{ .long_name = "really-long", .short_name = 'l', .binding = Binding.bind(&options.bool) },
+            .{ .long_name = "persistent", .short_name = 'p', .binding = Binding.bind(&options.persistent) },
         },
         // Action is either a function to run or a list of possible sub commands
         // .action = .{ .run = &execute },

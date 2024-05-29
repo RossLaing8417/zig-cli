@@ -35,6 +35,7 @@ const Flag = struct {
     long_name: []const u8,
     short_name: ?u8 = null,
     required: bool = false,
+    persistent: bool = false,
     allow_multiple: bool = false,
     help: ?[]const u8 = null,
     value_name: []const u8 = "VALUE",
@@ -102,7 +103,7 @@ pub fn runArgs(self: *const Cmd, allocator: std.mem.Allocator, command_args: [][
         if (command.args) |args| {
             for (args) |arg| {
                 if (arg.required and arg.binding.count == 0) {
-                    exitMsg(1, "Required flag: {s}\n", .{arg.name});
+                    exitMsg(1, "Required arg: {s}\n", .{arg.name});
                 }
             }
         }
@@ -175,6 +176,40 @@ pub const CommandList = struct {
         std.debug.assert(self.commands.items.len > 0);
         return self.commands.items[self.commands.items.len - 1];
     }
+
+    pub fn getShortFlag(self: *const CommandList, name: u8) ?*const Flag {
+        for (0..self.commands.items.len) |i| {
+            const cmd = self.commands.items[self.commands.items.len - 1 - i];
+            if (cmd.flags) |flags| {
+                for (flags) |*flag| {
+                    if (i < self.commands.items.len - 1 and flag.persistent) {
+                        continue;
+                    }
+                    if (flag.short_name != null and flag.short_name.? == name) {
+                        return flag;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    pub fn getLongFlag(self: *const CommandList, name: []const u8) ?*const Flag {
+        for (0..self.commands.items.len) |i| {
+            const cmd = self.commands.items[self.commands.items.len - 1 - i];
+            if (cmd.flags) |flags| {
+                for (flags) |*flag| {
+                    if (i < self.commands.items.len - 1 and flag.persistent) {
+                        continue;
+                    }
+                    if (std.mem.eql(u8, flag.long_name, name)) {
+                        return flag;
+                    }
+                }
+            }
+        }
+        return null;
+    }
 };
 
 const Evaluator = struct {
@@ -204,79 +239,48 @@ const Evaluator = struct {
 
     fn evalShort(self: *Evaluator, command_list: *CommandList, arg: Parser.Arg.Flag) !void {
         const cmd = command_list.current();
-        if (cmd.flags) |flags| {
-            var found = false;
-            for (arg.name, 0..) |name, index| {
-                for (flags) |*flag| {
-                    if (flag.short_name == null or flag.short_name.? != name) {
-                        continue;
-                    }
-                    if (!flag.allow_multiple and flag.binding.count > 0) {
-                        exitMsg(1, "Flag already set: {c}\n", .{name});
-                    }
-                    // TODO: Probably should do something about the const cast...
-                    try @constCast(&flag.binding).parse(blk: {
-                        if (index == arg.name.len - 1) {
-                            if (consumePositional(arg.value, flag.binding, self.parsed_args[self.i..])) {
-                                self.i += 1;
-                                break :blk self.parsed_args[self.i].positional;
-                            }
-                            break :blk arg.value;
+
+        for (arg.name, 0..) |name, index| {
+            if (command_list.getShortFlag(name)) |flag| {
+                if (!flag.allow_multiple and flag.binding.count > 0) {
+                    exitMsg(1, "Flag already set: {c}\n", .{name});
+                }
+                // TODO: Probably should do something about the const cast...
+                try @constCast(&flag.binding).parse(blk: {
+                    if (index == arg.name.len - 1) {
+                        if (consumePositional(arg.value, flag.binding, self.parsed_args[self.i..])) {
+                            self.i += 1;
+                            break :blk self.parsed_args[self.i].positional;
                         }
-                        break :blk null;
-                    });
-                    found = true;
-                    break;
-                }
-                if (!found) {
-                    switch (name) {
-                        'h' => Help.printHelp(command_list),
-                        'v' => if (cmd == command_list.root()) Help.printVersion(cmd),
-                        else => {},
+                        break :blk arg.value;
                     }
-                    exitMsg(1, "Unknown flag: {c}\n", .{name});
+                    break :blk null;
+                });
+            } else {
+                switch (name) {
+                    'h' => Help.printHelp(command_list),
+                    'v' => if (cmd == command_list.root()) Help.printVersion(cmd),
+                    else => {},
                 }
+                exitMsg(1, "Unknown flag: {c}\n", .{name});
             }
-        } else {
-            switch (arg.name[0]) {
-                'h' => Help.printHelp(command_list),
-                'v' => if (cmd == command_list.root()) Help.printVersion(cmd),
-                else => {},
-            }
-            exitMsg(1, "Unknown flag: {s}\n", .{arg.name});
         }
     }
 
     fn evalLong(self: *Evaluator, command_list: *CommandList, arg: Parser.Arg.Flag) !void {
         const cmd = command_list.current();
-        if (cmd.flags) |flags| {
-            var found = false;
-            for (flags) |*flag| {
-                if (!std.mem.eql(u8, flag.long_name, arg.name)) {
-                    continue;
-                }
-                if (!flag.allow_multiple and flag.binding.count > 0) {
-                    exitMsg(1, "Flag already set: {s}\n", .{arg.name});
-                }
-                // TODO: Probably should do something about the const cast...
-                try @constCast(&flag.binding).parse(blk: {
-                    if (consumePositional(arg.value, flag.binding, self.parsed_args[self.i..])) {
-                        self.i += 1;
-                        break :blk self.parsed_args[self.i].positional;
-                    }
-                    break :blk arg.value;
-                });
-                found = true;
-                break;
+        if (command_list.getLongFlag(arg.name)) |flag| {
+            if (!flag.allow_multiple and flag.binding.count > 0) {
+                exitMsg(1, "Flag already set: {s}\n", .{arg.name});
             }
-            if (!found) {
-                if (std.mem.eql(u8, arg.name, "help")) {
-                    Help.printHelp(command_list);
-                } else if (cmd == command_list.root() and std.mem.eql(u8, arg.name, "version")) {
-                    Help.printVersion(cmd);
+            // TODO: Probably should do something about the const cast...
+            try @constCast(&flag.binding).parse(blk: {
+                if (consumePositional(arg.value, flag.binding, self.parsed_args[self.i..])) {
+                    self.i += 1;
+                    break :blk self.parsed_args[self.i].positional;
                 }
-                exitMsg(1, "Unknown flag: {s}\n", .{arg.name});
-            }
+                break :blk arg.value;
+            });
         } else {
             if (std.mem.eql(u8, arg.name, "help")) {
                 Help.printHelp(command_list);
