@@ -12,6 +12,7 @@ const Options = struct {
     sub: struct { bool: bool = false } = .{},
     other: struct { bool: bool = false } = .{},
     persistent: ?bool = null,
+    env: ?[]const u8 = null,
 };
 
 pub fn main() !void {
@@ -39,6 +40,7 @@ pub fn main() !void {
             .{ .long_name = "longish", .binding = Binding.bind(&options.bool) },
             .{ .long_name = "really-long", .short_name = 'l', .binding = Binding.bind(&options.bool) },
             .{ .long_name = "persistent", .short_name = 'p', .binding = Binding.bind(&options.persistent) },
+            .{ .long_name = "env", .env_var_name = "PATH", .binding = Binding.bind(&options.env) },
         },
         // Action is either a function to run or a list of possible sub commands
         // .action = .{ .run = &execute },
@@ -104,7 +106,7 @@ fn post(_: std.mem.Allocator, _: *const Cmd, _: Cmd.Context) !void {
 
 fn execute(_: std.mem.Allocator, _: *const Cmd, ctx: Cmd.Context) !void {
     const options: *Options = @ptrCast(@alignCast(ctx.data));
-    std.debug.print("OMG!\n{any}\n", .{options});
+    std.debug.print("OMG!\n{any}\nENV: {s}\n", .{ options, options.env orelse "" });
 }
 
 test {

@@ -39,6 +39,7 @@ const Flag = struct {
     allow_multiple: bool = false,
     help: ?[]const u8 = null,
     value_name: []const u8 = "VALUE",
+    env_var_name: ?[]const u8 = null,
     binding: Binding,
 };
 
@@ -92,9 +93,20 @@ pub fn runArgs(self: *const Cmd, allocator: std.mem.Allocator, command_args: [][
 
     const commands = command_list.commands.items;
 
+    var env_map = try std.process.getEnvMap(allocator);
+    defer env_map.deinit();
+
     for (commands) |command| {
         if (command.flags) |flags| {
             for (flags) |flag| {
+                if (flag.binding.count == 0) {
+                    if (flag.env_var_name) |env_var_name| {
+                        if (env_map.get(env_var_name)) |value| {
+                            // TODO: Probably should do something about the const cast...
+                            try @constCast(&flag.binding).parse(value);
+                        }
+                    }
+                }
                 if (flag.required and flag.binding.count == 0) {
                     exitMsg(1, "Required flag: {s}\n", .{flag.long_name});
                 }
