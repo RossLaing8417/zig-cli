@@ -3,22 +3,22 @@ const std = @import("std");
 const Cmd = @import("command.zig");
 const CommandList = Cmd.CommandList;
 
-pub fn printVersion(cmd: *const Cmd) noreturn {
+pub fn printVersion(cmd: *const Cmd) Cmd.Error {
     const writer = std.io.getStdOut().writer();
     writer.print("{s}\n", .{cmd.version orelse "unknown"}) catch |err| std.debug.print("{}\n", .{err});
-    Cmd.exit(0);
+    return Cmd.Error.ExitSafe;
 }
 
-pub fn printHelp(command_list: *const CommandList) noreturn {
+pub fn printHelp(command_list: *const CommandList) Cmd.Error {
     const writer = std.io.getStdOut().writer();
     printHelpWriter(writer, command_list) catch |err| std.debug.print("{}\n", .{err});
-    Cmd.exit(0);
+    return Cmd.Error.ExitSafe;
 }
 
-pub fn printHelpError(command_list: *const CommandList) noreturn {
+pub fn printHelpError(command_list: *const CommandList) Cmd.Error {
     const writer = std.io.getStdErr().writer();
     printCommandShortHelp(writer, command_list) catch |err| std.debug.print("{}\n", .{err});
-    Cmd.exit(1);
+    return Cmd.Error.ExitError;
 }
 
 fn printCommandShortHelp(writer: std.fs.File.Writer, command_list: *const CommandList) !void {

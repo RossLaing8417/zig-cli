@@ -68,6 +68,17 @@ const InitFn = *const fn (allocator: std.mem.Allocator, cmd: *const Cmd, data: *
 const DeinitFn = *const fn (allocator: std.mem.Allocator, cmd: *const Cmd, data: *anyopaque) void;
 const ActionFn = *const fn (allocator: std.mem.Allocator, cmd: *const Cmd, ctx: Context) anyerror!void;
 
+pub const Error = error{
+    MissingRequiredFlag,
+    MissingRequiredArg,
+    FlagAlreadySet,
+    UnknownFlag,
+    TooManyArgs,
+    UnknownCommand,
+    ExitSafe,
+    ExitError,
+};
+
 /// Run the command using the given args slice
 pub fn run(self: *const Cmd, allocator: std.mem.Allocator, data: *anyopaque) !void {
     const args = try std.process.argsAlloc(allocator);
@@ -78,6 +89,16 @@ pub fn run(self: *const Cmd, allocator: std.mem.Allocator, data: *anyopaque) !vo
 
 /// Run the command using the given args slice
 pub fn runArgs(self: *const Cmd, allocator: std.mem.Allocator, command_args: [][]const u8, data: *anyopaque) !void {
+    self.exec(allocator, command_args, data) catch |err| switch (err) {
+        Error.ExitSafe => return,
+        Error.ExitError => std.process.exit(1),
+        else => return err,
+    };
+}
+
+/// Parsers and executes the result command
+/// Mostly exists to provide a nice way to catch any errors return in this function
+fn exec(self: *const Cmd, allocator: std.mem.Allocator, command_args: [][]const u8, data: *anyopaque) !void {
     const parsed_args, const passthrough_args = try Parser.parse(allocator, command_args);
     defer allocator.free(parsed_args);
 
@@ -108,14 +129,16 @@ pub fn runArgs(self: *const Cmd, allocator: std.mem.Allocator, command_args: [][
                     }
                 }
                 if (flag.required and flag.binding.count == 0) {
-                    exitMsg(1, "Required flag: {s}\n", .{flag.long_name});
+                    std.debug.print("Required flag: {s}\n", .{flag.long_name});
+                    return Error.MissingRequiredFlag;
                 }
             }
         }
         if (command.args) |args| {
             for (args) |arg| {
                 if (arg.required and arg.binding.count == 0) {
-                    exitMsg(1, "Required arg: {s}\n", .{arg.name});
+                    std.debug.print("Required arg: {s}\n", .{arg.name});
+                    return Error.MissingRequiredArg;
                 }
             }
         }
@@ -125,8 +148,9 @@ pub fn runArgs(self: *const Cmd, allocator: std.mem.Allocator, command_args: [][
 
     const action = switch (cmd.action) {
         .run => |action| action,
-        .commands => Help.printHelpError(&command_list),
+        .commands => return Help.printHelpError(&command_list),
     };
+
     const ctx: Context = .{
         .data = data,
         .passthrough_args = passthrough_args,
@@ -147,15 +171,6 @@ pub fn runArgs(self: *const Cmd, allocator: std.mem.Allocator, command_args: [][
             try post_action(allocator, command, ctx);
         }
     }
-}
-
-pub fn exit(status: u8) noreturn {
-    std.process.exit(status);
-}
-
-pub fn exitMsg(status: u8, comptime fmt: []const u8, args: anytype) noreturn {
-    std.debug.print(fmt, args);
-    std.process.exit(status);
 }
 
 pub const CommandList = struct {
@@ -256,7 +271,8 @@ const Evaluator = struct {
         for (arg.name, 0..) |name, index| {
             if (command_list.getShortFlag(name)) |flag| {
                 if (!flag.allow_multiple and flag.binding.count > 0) {
-                    exitMsg(1, "Flag already set: {c}\n", .{name});
+                    std.debug.print("Flag already set: {c}\n", .{name});
+                    return Error.FlagAlreadySet;
                 }
                 // TODO: Probably should do something about the const cast...
                 try @constCast(&flag.binding).parse(blk: {
@@ -271,11 +287,12 @@ const Evaluator = struct {
                 });
             } else {
                 switch (name) {
-                    'h' => Help.printHelp(command_list),
-                    'v' => if (cmd == command_list.root()) Help.printVersion(cmd),
+                    'h' => return Help.printHelp(command_list),
+                    'v' => if (cmd == command_list.root()) return Help.printVersion(cmd),
                     else => {},
                 }
-                exitMsg(1, "Unknown flag: {c}\n", .{name});
+                std.debug.print("Unknown flag: {c}\n", .{name});
+                return Error.UnknownFlag;
             }
         }
     }
@@ -284,7 +301,8 @@ const Evaluator = struct {
         const cmd = command_list.current();
         if (command_list.getLongFlag(arg.name)) |flag| {
             if (!flag.allow_multiple and flag.binding.count > 0) {
-                exitMsg(1, "Flag already set: {s}\n", .{arg.name});
+                std.debug.print("Flag already set: {s}\n", .{arg.name});
+                return Error.FlagAlreadySet;
             }
             // TODO: Probably should do something about the const cast...
             try @constCast(&flag.binding).parse(blk: {
@@ -296,11 +314,12 @@ const Evaluator = struct {
             });
         } else {
             if (std.mem.eql(u8, arg.name, "help")) {
-                Help.printHelp(command_list);
+                return Help.printHelp(command_list);
             } else if (cmd == command_list.root() and std.mem.eql(u8, arg.name, "version")) {
-                Help.printVersion(cmd);
+                return Help.printVersion(cmd);
             }
-            exitMsg(1, "Unknown flag: {s}\n", .{arg.name});
+            std.debug.print("Unknown flag: {s}\n", .{arg.name});
+            return Error.UnknownFlag;
         }
     }
 
@@ -314,10 +333,12 @@ const Evaluator = struct {
                         try @constCast(&positionals[self.pos].binding).parse(positional);
                         self.pos += 1;
                     } else {
-                        exitMsg(1, "Too many arguments\n", .{});
+                        std.debug.print("Too many arguments\n", .{});
+                        return Error.TooManyArgs;
                     }
                 } else {
-                    exitMsg(1, "Too many arguments\n", .{});
+                    std.debug.print("Too many arguments\n", .{});
+                    return Error.TooManyArgs;
                 }
             },
             .commands => |commands| {
@@ -334,7 +355,8 @@ const Evaluator = struct {
                     break;
                 }
                 if (!found) {
-                    exitMsg(1, "Unknown command: {s}\n", .{positional});
+                    std.debug.print("Unknown command: {s}\n", .{positional});
+                    return Error.UnknownCommand;
                 }
             },
         }
