@@ -31,7 +31,7 @@ action: Action,
 /// Function to execute after the action
 post_action: ?ActionFn = null,
 
-const Flag = struct {
+pub const Flag = struct {
     long_name: []const u8,
     short_name: ?u8 = null,
     required: bool = false,
@@ -43,7 +43,7 @@ const Flag = struct {
     binding: Binding,
 };
 
-const PositionalArg = struct {
+pub const PositionalArg = struct {
     name: []const u8,
     required: bool = false,
     // at_least: ?usize = null,
@@ -51,6 +51,7 @@ const PositionalArg = struct {
     binding: Binding,
 };
 
+/// Context passed to action functions
 pub const Context = struct {
     data: *anyopaque,
     passthrough_args: []const []const u8,
@@ -66,7 +67,7 @@ const Action = union(enum) {
 
 const InitFn = *const fn (allocator: std.mem.Allocator, cmd: *const Cmd, data: *anyopaque) anyerror!void;
 const DeinitFn = *const fn (allocator: std.mem.Allocator, cmd: *const Cmd, data: *anyopaque) void;
-const ActionFn = *const fn (allocator: std.mem.Allocator, cmd: *const Cmd, ctx: Context) anyerror!void;
+const ActionFn = *const fn (allocator: std.mem.Allocator, ctx: Context) anyerror!void;
 
 pub const Error = error{
     MissingRequiredFlag,
@@ -88,7 +89,7 @@ pub fn run(self: *const Cmd, allocator: std.mem.Allocator, data: *anyopaque) !vo
 }
 
 /// Run the command using the given args slice
-pub fn runArgs(self: *const Cmd, allocator: std.mem.Allocator, command_args: [][]const u8, data: *anyopaque) !void {
+pub fn runArgs(self: *const Cmd, allocator: std.mem.Allocator, command_args: []const []const u8, data: *anyopaque) !void {
     self.exec(allocator, command_args, data) catch |err| switch (err) {
         Error.ExitSafe => return,
         Error.ExitError => std.process.exit(1),
@@ -98,7 +99,7 @@ pub fn runArgs(self: *const Cmd, allocator: std.mem.Allocator, command_args: [][
 
 /// Parsers and executes the result command
 /// Mostly exists to provide a nice way to catch any errors return in this function
-fn exec(self: *const Cmd, allocator: std.mem.Allocator, command_args: [][]const u8, data: *anyopaque) !void {
+fn exec(self: *const Cmd, allocator: std.mem.Allocator, command_args: []const []const u8, data: *anyopaque) !void {
     const parsed_args, const passthrough_args = try Parser.parse(allocator, command_args);
     defer allocator.free(parsed_args);
 
@@ -159,16 +160,16 @@ fn exec(self: *const Cmd, allocator: std.mem.Allocator, command_args: [][]const 
 
     for (commands) |command| {
         if (command.pre_action) |pre_action| {
-            try pre_action(allocator, command, ctx);
+            try pre_action(allocator, ctx);
         }
     }
 
-    try action(allocator, cmd, ctx);
+    try action(allocator, ctx);
 
     for (0..commands.len) |idx| {
         const command = commands[commands.len - 1 - idx];
         if (command.post_action) |post_action| {
-            try post_action(allocator, command, ctx);
+            try post_action(allocator, ctx);
         }
     }
 }
