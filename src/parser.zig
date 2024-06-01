@@ -33,7 +33,15 @@ pub fn parse(allocator: std.mem.Allocator, args: []const []const u8) !struct { [
         }
 
         if (arg[0] == '-') {
-            if (arg.len == 1) {
+            const numeric = blk: {
+                for (arg[1..]) |c| {
+                    if (!std.ascii.isDigit(c)) {
+                        break :blk false;
+                    }
+                }
+                break :blk true;
+            };
+            if (arg.len == 1 or numeric) {
                 try parsed_args.append(.{
                     .positional = arg,
                 });
@@ -203,4 +211,14 @@ test "double dash" {
     for (passthrough, expected) |arg, value| {
         try std.testing.expectEqualStrings(value, arg);
     }
+}
+
+test "negative number" {
+    const args, _ = try parse(std.testing.allocator, &.{"-123"});
+    defer std.testing.allocator.free(args);
+
+    try std.testing.expectEqual(@as(usize, 1), args.len);
+
+    try std.testing.expectEqualStrings("positional", @tagName(args[0]));
+    try std.testing.expectEqualStrings("-123", args[0].positional);
 }
