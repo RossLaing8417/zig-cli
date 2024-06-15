@@ -15,7 +15,7 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
-    _ = b.addModule("cli", .{
+    _ = b.addModule("zig-cli", .{
         .root_source_file = b.path("src/cli.zig"),
         .target = target,
         .optimize = optimize,
