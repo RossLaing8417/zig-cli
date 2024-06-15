@@ -3,50 +3,11 @@ const std = @import("std");
 const Cmd = @import("command.zig");
 const CommandList = Cmd.CommandList;
 
-pub fn printVersion(cmd: *const Cmd) Cmd.Error {
-    const writer = std.io.getStdOut().writer();
-    writer.print("{s}\n", .{cmd.version orelse "unknown"}) catch |err| std.debug.print("{}\n", .{err});
-    return Cmd.Error.ExitSafe;
+pub fn printVersion(writer: std.io.AnyWriter, cmd: *const Cmd) !void {
+    try writer.print("{s}\n", .{cmd.version orelse "unknown"});
 }
 
-pub fn printHelp(command_list: *const CommandList) Cmd.Error {
-    const writer = std.io.getStdOut().writer();
-    printHelpWriter(writer, command_list) catch |err| std.debug.print("{}\n", .{err});
-    return Cmd.Error.ExitSafe;
-}
-
-pub fn printHelpError(command_list: *const CommandList) Cmd.Error {
-    const writer = std.io.getStdErr().writer();
-    printCommandShortHelp(writer, command_list) catch |err| std.debug.print("{}\n", .{err});
-    return Cmd.Error.ExitError;
-}
-
-fn printCommandShortHelp(writer: std.fs.File.Writer, command_list: *const CommandList) !void {
-    const commands = command_list.commands.items;
-    const exec_cmd = command_list.current();
-    for (commands, 0..) |cmd, i| {
-        if (i != 0) {
-            try writer.writeByte(' ');
-        }
-        try writer.writeAll(cmd.name);
-    }
-
-    if (exec_cmd.short_help) |help| {
-        try writer.print(" - {s}", .{help});
-    }
-
-    try writer.writeByte('\n');
-
-    if (exec_cmd.long_help) |help| {
-        try writer.print("\n{s}\n", .{help});
-    }
-
-    if (exec_cmd.description) |description| {
-        try writer.print("\n{s}\n", .{description});
-    }
-}
-
-fn printHelpWriter(writer: std.fs.File.Writer, command_list: *const CommandList) !void {
+pub fn printHelp(writer: std.io.AnyWriter, command_list: *const CommandList) !void {
     const commands = command_list.commands.items;
     const exec_cmd = command_list.current();
     const is_root_cmd = exec_cmd == command_list.root();
@@ -140,7 +101,32 @@ fn printHelpWriter(writer: std.fs.File.Writer, command_list: *const CommandList)
     }
 }
 
-fn printIndented(writer: std.fs.File.Writer, message: []const u8) !void {
+fn printCommandShortHelp(writer: std.fs.File.Writer, command_list: *const CommandList) !void {
+    const commands = command_list.commands.items;
+    const exec_cmd = command_list.current();
+    for (commands, 0..) |cmd, i| {
+        if (i != 0) {
+            try writer.writeByte(' ');
+        }
+        try writer.writeAll(cmd.name);
+    }
+
+    if (exec_cmd.short_help) |help| {
+        try writer.print(" - {s}", .{help});
+    }
+
+    try writer.writeByte('\n');
+
+    if (exec_cmd.long_help) |help| {
+        try writer.print("\n{s}\n", .{help});
+    }
+
+    if (exec_cmd.description) |description| {
+        try writer.print("\n{s}\n", .{description});
+    }
+}
+
+fn printIndented(writer: std.io.AnyWriter, message: []const u8) !void {
     var itr = std.mem.splitSequence(u8, message, "\n");
     while (itr.next()) |line| {
         try writer.print("    {s}\n", .{line});

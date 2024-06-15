@@ -33,15 +33,7 @@ pub fn parse(allocator: std.mem.Allocator, args: []const []const u8) !struct { [
         }
 
         if (arg[0] == '-') {
-            const numeric = blk: {
-                for (arg[1..]) |c| {
-                    if (!std.ascii.isDigit(c)) {
-                        break :blk false;
-                    }
-                }
-                break :blk true;
-            };
-            if (arg.len == 1 or numeric) {
+            if (arg.len == 1 or (arg.len > 1 and std.ascii.isDigit(arg[1]))) {
                 try parsed_args.append(.{
                     .positional = arg,
                 });

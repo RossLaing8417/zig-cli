@@ -30,6 +30,10 @@ pre_action: ?ActionFn = null,
 action: Action,
 /// Function to execute after the action
 post_action: ?ActionFn = null,
+/// Writer (defaults to stdout)
+writer: std.io.AnyWriter = std.io.getStdOut().writer().any(),
+/// Error Writer (defaults to stderr)
+error_writer: std.io.AnyWriter = std.io.getStdErr().writer().any(),
 
 pub const Flag = struct {
     long_name: []const u8,
@@ -114,6 +118,8 @@ fn exec(self: *const Cmd, allocator: std.mem.Allocator, command_args: []const []
     defer command_list.deinit();
 
     const commands = command_list.commands.items;
+    const root = command_list.root();
+    const cmd = command_list.current();
 
     var env_map = try std.process.getEnvMap(allocator);
     defer env_map.deinit();
@@ -130,7 +136,7 @@ fn exec(self: *const Cmd, allocator: std.mem.Allocator, command_args: []const []
                     }
                 }
                 if (flag.required and flag.binding.count == 0) {
-                    std.debug.print("Required flag: {s}\n", .{flag.long_name});
+                    root.print("Required flag: {s}\n", .{flag.long_name});
                     return Error.MissingRequiredFlag;
                 }
             }
@@ -138,18 +144,19 @@ fn exec(self: *const Cmd, allocator: std.mem.Allocator, command_args: []const []
         if (command.args) |args| {
             for (args) |arg| {
                 if (arg.required and arg.binding.count == 0) {
-                    std.debug.print("Required arg: {s}\n", .{arg.name});
+                    root.print("Required arg: {s}\n", .{arg.name});
                     return Error.MissingRequiredArg;
                 }
             }
         }
     }
 
-    const cmd = commands[commands.len - 1];
-
     const action = switch (cmd.action) {
         .run => |action| action,
-        .commands => return Help.printHelpError(&command_list),
+        .commands => {
+            Help.printHelp(root.error_writer, &command_list) catch |err| root.print("{}\n", .{err});
+            return Error.ExitSafe;
+        },
     };
 
     const ctx: Context = .{
@@ -172,6 +179,10 @@ fn exec(self: *const Cmd, allocator: std.mem.Allocator, command_args: []const []
             try post_action(allocator, ctx);
         }
     }
+}
+
+pub fn print(self: *const Cmd, comptime format: []const u8, args: anytype) void {
+    self.error_writer.print(format, args) catch |err| std.debug.print("{}\n", .{err});
 }
 
 pub const CommandList = struct {
@@ -267,12 +278,13 @@ const Evaluator = struct {
     }
 
     fn evalShort(self: *Evaluator, command_list: *CommandList, arg: Parser.Arg.Flag) !void {
+        const root = command_list.root();
         const cmd = command_list.current();
 
         for (arg.name, 0..) |name, index| {
             if (command_list.getShortFlag(name)) |flag| {
                 if (!flag.allow_multiple and flag.binding.count > 0) {
-                    std.debug.print("Flag already set: {c}\n", .{name});
+                    root.print("Flag already set: {c}\n", .{name});
                     return Error.FlagAlreadySet;
                 }
                 // TODO: Probably should do something about the const cast...
@@ -288,21 +300,29 @@ const Evaluator = struct {
                 });
             } else {
                 switch (name) {
-                    'h' => return Help.printHelp(command_list),
-                    'v' => if (cmd == command_list.root()) return Help.printVersion(cmd),
+                    'h' => {
+                        Help.printHelp(root.writer, command_list) catch |err| root.print("{}\n", .{err});
+                        return Error.ExitSafe;
+                    },
+                    'v' => if (cmd == command_list.root()) {
+                        Help.printVersion(root.writer, cmd) catch |err| root.print("{}\n", .{err});
+                        return Error.ExitSafe;
+                    },
                     else => {},
                 }
-                std.debug.print("Unknown flag: {c}\n", .{name});
+                root.print("Unknown flag: {c}\n", .{name});
                 return Error.UnknownFlag;
             }
         }
     }
 
     fn evalLong(self: *Evaluator, command_list: *CommandList, arg: Parser.Arg.Flag) !void {
+        const root = command_list.root();
         const cmd = command_list.current();
+
         if (command_list.getLongFlag(arg.name)) |flag| {
             if (!flag.allow_multiple and flag.binding.count > 0) {
-                std.debug.print("Flag already set: {s}\n", .{arg.name});
+                root.print("Flag already set: {s}\n", .{arg.name});
                 return Error.FlagAlreadySet;
             }
             // TODO: Probably should do something about the const cast...
@@ -315,17 +335,21 @@ const Evaluator = struct {
             });
         } else {
             if (std.mem.eql(u8, arg.name, "help")) {
-                return Help.printHelp(command_list);
-            } else if (cmd == command_list.root() and std.mem.eql(u8, arg.name, "version")) {
-                return Help.printVersion(cmd);
+                Help.printHelp(root.writer, command_list) catch |err| root.print("{}\n", .{err});
+                return Error.ExitSafe;
+            } else if (cmd == root and std.mem.eql(u8, arg.name, "version")) {
+                Help.printVersion(root.writer, cmd) catch |err| root.print("{}\n", .{err});
+                return Error.ExitSafe;
             }
-            std.debug.print("Unknown flag: {s}\n", .{arg.name});
+            root.print("Unknown flag: {s}\n", .{arg.name});
             return Error.UnknownFlag;
         }
     }
 
     fn evalPositional(self: *Evaluator, command_list: *CommandList, positional: []const u8, data: *anyopaque) !void {
+        const root = command_list.root();
         const cmd = command_list.current();
+
         switch (cmd.action) {
             .run => {
                 if (cmd.args) |positionals| {
@@ -334,11 +358,11 @@ const Evaluator = struct {
                         try @constCast(&positionals[self.pos].binding).parse(positional);
                         self.pos += 1;
                     } else {
-                        std.debug.print("Too many arguments\n", .{});
+                        root.print("Too many arguments\n", .{});
                         return Error.TooManyArgs;
                     }
                 } else {
-                    std.debug.print("Too many arguments\n", .{});
+                    root.print("Too many arguments\n", .{});
                     return Error.TooManyArgs;
                 }
             },
@@ -356,7 +380,7 @@ const Evaluator = struct {
                     break;
                 }
                 if (!found) {
-                    std.debug.print("Unknown command: {s}\n", .{positional});
+                    root.print("Unknown command: {s}\n", .{positional});
                     return Error.UnknownCommand;
                 }
             },
