@@ -62,7 +62,7 @@ const MetaData = struct {
                 .size = @sizeOf(Type),
                 .parse = struct {
                     fn parse(target: *anyopaque, value: ?[]const u8) !void {
-                        try parseInt(T, target, value);
+                        try parseInt(Type, target, value);
                     }
                 }.parse,
             },
@@ -70,7 +70,7 @@ const MetaData = struct {
                 .size = @sizeOf(Type),
                 .parse = struct {
                     fn parse(target: *anyopaque, value: ?[]const u8) !void {
-                        try parseFloat(T, target, value);
+                        try parseFloat(Type, target, value);
                     }
                 }.parse,
             },
@@ -79,7 +79,7 @@ const MetaData = struct {
                 .bool = true,
                 .parse = struct {
                     fn parse(target: *anyopaque, value: ?[]const u8) !void {
-                        try parseBool(T, target, value);
+                        try parseBool(Type, target, value);
                     }
                 }.parse,
             },
@@ -87,7 +87,7 @@ const MetaData = struct {
                 .size = @sizeOf(Type),
                 .parse = struct {
                     fn parse(target: *anyopaque, value: ?[]const u8) !void {
-                        try parseString(T, target, value);
+                        try parseString(Type, target, value);
                     }
                 }.parse,
             },
@@ -95,7 +95,7 @@ const MetaData = struct {
                 .size = @sizeOf(Type),
                 .parse = struct {
                     fn parse(target: *anyopaque, value: ?[]const u8) !void {
-                        try parseEnum(T, target, value);
+                        try parseEnum(Type, target, value);
                     }
                 }.parse,
             },
