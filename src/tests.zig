@@ -260,19 +260,23 @@ test "parse slice" {
     const Data = struct {
         int_slice: []i32,
         enum_slice: []Enum,
+        string_slice: [][]const u8,
     };
     var result = Data{
         .int_slice = try std.testing.allocator.alloc(i32, 0),
         .enum_slice = try std.testing.allocator.alloc(Enum, 0),
+        .string_slice = try std.testing.allocator.alloc([]u8, 0),
     };
     defer {
         std.testing.allocator.free(result.int_slice);
         std.testing.allocator.free(result.enum_slice);
+        std.testing.allocator.free(result.string_slice);
     }
 
     const expected = Data{
         .int_slice = @constCast(&[_]i32{ 1, 2, -3 }),
         .enum_slice = @constCast(&[_]Enum{ .Some, .None }),
+        .string_slice = @constCast(&[_][]const u8{ "Foo", "Bar" }),
     };
 
     var cmd = Cmd{
@@ -280,6 +284,7 @@ test "parse slice" {
         .flags = &.{
             .{ .long_name = "int-slice", .required = true, .allow_multiple = true, .binding = Binding.bindSlice(&result.int_slice, std.testing.allocator) },
             .{ .long_name = "enum-slice", .required = true, .allow_multiple = true, .binding = Binding.bindSlice(&result.enum_slice, std.testing.allocator) },
+            .{ .long_name = "string-slice", .required = true, .allow_multiple = true, .binding = Binding.bindSlice(&result.string_slice, std.testing.allocator) },
         },
         .action = .{ .run = &dummyFn },
         .error_writer = writer.any(),
@@ -296,6 +301,10 @@ test "parse slice" {
         "None",
         "--int-slice",
         "-3",
+        "--string-slice",
+        "Foo",
+        "--string-slice",
+        "Bar",
     };
 
     try cmd.runArgs(std.testing.allocator, args, &result);

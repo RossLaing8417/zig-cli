@@ -50,7 +50,8 @@ pub fn bindSlice(target: anytype, allocator: std.mem.Allocator) Binding {
         .Pointer => |pointer| {
             switch (pointer.size) {
                 .Slice => {
-                    if (@typeInfo(pointer.child) == .Pointer) {
+                    const Child = @typeInfo(pointer.child);
+                    if (Child == .Pointer and Child.Pointer.child != u8) {
                         @compileError("Slice of pointers are currently not supported");
                     }
                     return .{
@@ -142,7 +143,8 @@ fn getParseSliceFn(comptime T: type) MetaData.ParseFn {
                 slice_ptr.* = try allocator.?.realloc(slice_ptr.*, slice_ptr.len + 1);
             }
             const value_parse = getParseFn(T);
-            try value_parse(&slice_ptr.*[slice_ptr.len - 1], null, value);
+            const element_ptr: *T = &slice_ptr.*[slice_ptr.len - 1];
+            try value_parse(@ptrCast(element_ptr), null, value);
         }
     }.parse;
 }
