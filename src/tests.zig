@@ -249,31 +249,57 @@ test "parse flags success" {
 
     try std.testing.expectEqualStrings("", buffer.items);
 }
+test "parse slice" {
+    var buffer = std.ArrayList(u8).init(std.testing.allocator);
+    defer buffer.deinit();
 
-test "generate shell completion" {
-    var out_buffer = std.ArrayList(u8).init(std.testing.allocator);
-    defer out_buffer.deinit();
+    const writer = buffer.writer();
 
-    var err_buffer = std.ArrayList(u8).init(std.testing.allocator);
-    defer err_buffer.deinit();
+    const Enum = enum { Some, None };
 
-    const out_writer = out_buffer.writer();
-    const err_writer = err_buffer.writer();
+    const Data = struct {
+        int_slice: []i32,
+        enum_slice: []Enum,
+    };
+    var result = Data{
+        .int_slice = try std.testing.allocator.alloc(i32, 0),
+        .enum_slice = try std.testing.allocator.alloc(Enum, 0),
+    };
+    defer {
+        std.testing.allocator.free(result.int_slice);
+        std.testing.allocator.free(result.enum_slice);
+    }
+
+    const expected = Data{
+        .int_slice = @constCast(&[_]i32{ 1, 2, -3 }),
+        .enum_slice = @constCast(&[_]Enum{ .Some, .None }),
+    };
 
     var cmd = Cmd{
         .name = "zig-cli",
+        .flags = &.{
+            .{ .long_name = "int-slice", .required = true, .allow_multiple = true, .binding = Binding.bindSlice(&result.int_slice, std.testing.allocator) },
+            .{ .long_name = "enum-slice", .required = true, .allow_multiple = true, .binding = Binding.bindSlice(&result.enum_slice, std.testing.allocator) },
+        },
         .action = .{ .run = &dummyFn },
-        .writer = out_writer.any(),
-        .error_writer = err_writer.any(),
+        .error_writer = writer.any(),
     };
 
     const args = &[_][]const u8{
-        "--generate-shell-completion",
-        "bash",
+        "--int-slice",
+        "1",
+        "--enum-slice",
+        "Some",
+        "--int-slice",
+        "2",
+        "--enum-slice",
+        "None",
+        "--int-slice",
+        "-3",
     };
 
-    try cmd.runArgs(std.testing.allocator, args, &cmd);
+    try cmd.runArgs(std.testing.allocator, args, &result);
+    try std.testing.expectEqualDeep(expected, result);
 
-    // try std.testing.expectEqualStrings("", out_buffer.items);
-    try std.testing.expectEqualStrings("", err_buffer.items);
+    try std.testing.expectEqualStrings("", buffer.items);
 }
